@@ -65,8 +65,10 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
             }
         }
 
-    RETURN_TYPES = ('STRING', 'RH_Lora')
-    RETURN_NAMES = ('lora_name', 'lora')
+    # Match ComfyUI's LoRA dropdown input type (combo list from folder_paths),
+    # so this output can connect directly to LoraLoaderModelOnly.lora_name.
+    RETURN_TYPES = (folder_paths.get_filename_list("loras"), 'STRING')
+    RETURN_NAMES = ('lora_name', 'lora_path')
     FUNCTION = "generate"
     CATEGORY = "RunningHub/ImageQwenI2L"
 
@@ -88,6 +90,7 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
             embs = QwenImageUnit_Image2LoRAEncode().process(pipeline, image2lora_images=training_images)
             lora = QwenImageUnit_Image2LoRADecode().process(pipeline, **embs)["lora"]
         save_file(lora, lora_path)
+        # lora_name is a filename under models/loras (e.g. *.safetensors)
         return (self.lora_name, lora_path)
 
 NODE_CLASS_MAPPINGS = {
