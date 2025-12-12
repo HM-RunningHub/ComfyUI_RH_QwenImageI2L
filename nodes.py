@@ -13,6 +13,11 @@ import numpy as np
 from diffsynth.utils.lora import merge_lora
 from diffsynth import load_state_dict
 
+def setup_model_download_path():
+    if 'DIFFSYNTH_MODEL_BASE_PATH' not in os.environ:
+        os.environ['DIFFSYNTH_MODEL_BASE_PATH'] = folder_paths.models_dir
+        print(f"[RH_QwenImageI2L] Set DIFFSYNTH_MODEL_BASE_PATH to: {folder_paths.models_dir}")
+
 class AnyComboList(list):
     """
     A JSON-serializable list subtype used as a ComfyUI socket type.
@@ -61,15 +66,20 @@ class RunningHub_ImageQwenI2L_Loader_Style:
         # self.processor_path = os.path.join(folder_paths.models_dir, 'DiffSynth-Studio', 'Qwen-Image-Edit')
 
     def load(self):
+        setup_model_download_path()
+        
+        model_configs = [
+            ModelConfig(model_id='DiffSynth-Studio/General-Image-Encoders', origin_file_pattern="SigLIP2-G384/model.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id='DiffSynth-Studio/General-Image-Encoders', origin_file_pattern="DINOv3-7B/model.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id='DiffSynth-Studio/Qwen-Image-i2L', origin_file_pattern="Qwen-Image-i2L-Style.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+        ]
+        processor_config = ModelConfig(model_id='Qwen/Qwen-Image-Edit', origin_file_pattern="processor/", local_model_path=folder_paths.models_dir)
+        
         pipe = QwenImagePipeline.from_pretrained(
             torch_dtype=torch.bfloat16,
             device="cuda",
-            model_configs=[
-                ModelConfig(model_id='DiffSynth-Studio/General-Image-Encoders', origin_file_pattern="SigLIP2-G384/model.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id='DiffSynth-Studio/General-Image-Encoders', origin_file_pattern="DINOv3-7B/model.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id='DiffSynth-Studio/Qwen-Image-i2L', origin_file_pattern="Qwen-Image-i2L-Style.safetensors", **self.vram_config_disk_offload),
-            ],
-            processor_config=ModelConfig(model_id='Qwen/Qwen-Image-Edit', origin_file_pattern="processor/"),
+            model_configs=model_configs,
+            processor_config=processor_config,
             vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2,
         )
         return (pipe, )
@@ -101,17 +111,22 @@ class RunningHub_ImageQwenI2L_Loader_CFB:
         }
 
     def load(self):
+        setup_model_download_path()
+        
+        model_configs = [
+            ModelConfig(model_id="Qwen/Qwen-Image", origin_file_pattern="text_encoder/model*.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="SigLIP2-G384/model.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="DINOv3-7B/model.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Coarse.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+            ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Fine.safetensors", local_model_path=folder_paths.models_dir, **self.vram_config_disk_offload),
+        ]
+        processor_config = ModelConfig(model_id="Qwen/Qwen-Image-Edit", origin_file_pattern="processor/", local_model_path=folder_paths.models_dir)
+        
         pipe = QwenImagePipeline.from_pretrained(
             torch_dtype=torch.bfloat16,
             device="cuda",
-            model_configs=[
-                ModelConfig(model_id="Qwen/Qwen-Image", origin_file_pattern="text_encoder/model*.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="SigLIP2-G384/model.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="DINOv3-7B/model.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Coarse.safetensors", **self.vram_config_disk_offload),
-                ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Fine.safetensors", **self.vram_config_disk_offload),
-            ],
-            processor_config=ModelConfig(model_id="Qwen/Qwen-Image-Edit", origin_file_pattern="processor/"),
+            model_configs=model_configs,
+            processor_config=processor_config,
             vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2,
         )
         pipe.is_cfb = True
@@ -173,7 +188,8 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
 
         if hasattr(pipeline, 'is_cfb') and pipeline.is_cfb:
             print('[kiki] is_cfb:', pipeline.is_cfb)
-            lora_bias = ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Bias.safetensors")
+            setup_model_download_path()
+            lora_bias = ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Bias.safetensors", local_model_path=folder_paths.models_dir)
             lora_bias.download_if_necessary()
             lora_bias = load_state_dict(lora_bias.path, torch_dtype=torch.bfloat16, device="cuda")
             lora = merge_lora([lora, lora_bias])
