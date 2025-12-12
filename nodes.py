@@ -145,10 +145,28 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
     def __init__(self):
         self.lora_name = f"i2l_style_lora_{str(uuid.uuid4())}.safetensors"
 
+    def _get_lora_save_dir(self) -> str:
+        """
+        Resolve the actual LoRA directory in a cross-platform way.
+
+        Prefer ComfyUI's folder registry (supports custom LoRA paths and avoids
+        cwd-related issues), then fall back to the default models/loras folder.
+        """
+        try:
+            lora_dirs = folder_paths.get_folder_paths("loras")
+            if isinstance(lora_dirs, (list, tuple)) and len(lora_dirs) > 0 and lora_dirs[0]:
+                return os.path.abspath(lora_dirs[0])
+        except Exception:
+            # Keep a safe fallback for older ComfyUI versions / unexpected environments.
+            pass
+        return os.path.abspath(os.path.join(folder_paths.models_dir, "loras"))
+
     def generate(self, pipeline, training_images, **kwargs):
         training_images = [self.tensor_2_pil(image) for image in training_images]
         training_images = [image.convert("RGB") for image in training_images]
-        lora_path = os.path.join(folder_paths.models_dir, 'loras', self.lora_name)
+        lora_save_dir = self._get_lora_save_dir()
+        os.makedirs(lora_save_dir, exist_ok=True)
+        lora_path = os.path.join(lora_save_dir, self.lora_name)
         with torch.no_grad():
             embs = QwenImageUnit_Image2LoRAEncode().process(pipeline, image2lora_images=training_images)
             lora = QwenImageUnit_Image2LoRADecode().process(pipeline, **embs)["lora"]
@@ -161,7 +179,7 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
             lora = merge_lora([lora, lora_bias])
         save_file(lora, lora_path)
         # lora_name is a filename under models/loras (e.g. *.safetensors)
-        return (self.lora_name, lora_path)
+        return (self.lora_name, os.path.normpath(lora_path))
 
 NODE_CLASS_MAPPINGS = {
     "RunningHub_ImageQwenI2L_Loader(Style)": RunningHub_ImageQwenI2L_Loader_Style,
