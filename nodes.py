@@ -158,7 +158,13 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
         return img
 
     def __init__(self):
-        self.lora_name = f"i2l_style_lora_{str(uuid.uuid4())}.safetensors"
+        # Note: Do NOT pre-generate a file name here.
+        # A single node instance can be executed multiple times; the LoRA file name
+        # should be unique per execution to avoid overwriting previous outputs.
+        pass
+
+    def _make_unique_lora_name(self) -> str:
+        return f"i2l_style_lora_{str(uuid.uuid4())}.safetensors"
 
     def _get_lora_save_dir(self) -> str:
         """
@@ -181,7 +187,8 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
         training_images = [image.convert("RGB") for image in training_images]
         lora_save_dir = self._get_lora_save_dir()
         os.makedirs(lora_save_dir, exist_ok=True)
-        lora_path = os.path.join(lora_save_dir, self.lora_name)
+        lora_name = self._make_unique_lora_name()
+        lora_path = os.path.join(lora_save_dir, lora_name)
         with torch.no_grad():
             embs = QwenImageUnit_Image2LoRAEncode().process(pipeline, image2lora_images=training_images)
             lora = QwenImageUnit_Image2LoRADecode().process(pipeline, **embs)["lora"]
@@ -195,7 +202,7 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
             lora = merge_lora([lora, lora_bias])
         save_file(lora, lora_path)
         # lora_name is a filename under models/loras (e.g. *.safetensors)
-        return (self.lora_name, os.path.normpath(lora_path))
+        return (lora_name, os.path.normpath(lora_path))
 
 NODE_CLASS_MAPPINGS = {
     "RunningHub_ImageQwenI2L_Loader(Style)": RunningHub_ImageQwenI2L_Loader_Style,
