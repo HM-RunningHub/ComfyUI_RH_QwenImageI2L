@@ -10,6 +10,8 @@ from safetensors.torch import save_file
 import torch
 from PIL import Image
 import numpy as np
+from diffsynth.utils.lora import merge_lora
+from diffsynth import load_state_dict
 
 class RunningHub_ImageQwenI2L_Loader_Style:
     @classmethod
@@ -54,6 +56,49 @@ class RunningHub_ImageQwenI2L_Loader_Style:
         )
         return (pipe, )
 
+class RunningHub_ImageQwenI2L_Loader_CFB:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+
+            }
+        }
+
+    RETURN_TYPES = ('RH_QwenImageI2LPipeline', )
+    RETURN_NAMES = ('QwenImageI2LPipeline', )
+    FUNCTION = "load"
+    CATEGORY = "RunningHub/ImageQwenI2L"
+
+    def __init__(self):
+        self.vram_config_disk_offload = {
+            "offload_dtype": "disk",
+            "offload_device": "disk",
+            "onload_dtype": "disk",
+            "onload_device": "disk",
+            "preparing_dtype": torch.bfloat16,
+            "preparing_device": "cuda",
+            "computation_dtype": torch.bfloat16,
+            "computation_device": "cuda",
+        }
+
+    def load(self):
+        pipe = QwenImagePipeline.from_pretrained(
+            torch_dtype=torch.bfloat16,
+            device="cuda",
+            model_configs=[
+                ModelConfig(model_id="Qwen/Qwen-Image", origin_file_pattern="text_encoder/model*.safetensors", **self.vram_config_disk_offload),
+                ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="SigLIP2-G384/model.safetensors", **self.vram_config_disk_offload),
+                ModelConfig(model_id="DiffSynth-Studio/General-Image-Encoders", origin_file_pattern="DINOv3-7B/model.safetensors", **self.vram_config_disk_offload),
+                ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Coarse.safetensors", **self.vram_config_disk_offload),
+                ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Fine.safetensors", **self.vram_config_disk_offload),
+            ],
+            processor_config=ModelConfig(model_id="Qwen/Qwen-Image-Edit", origin_file_pattern="processor/"),
+            vram_limit=torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2,
+        )
+        pipe.is_cfb = True
+        return (pipe, )
+
 class RunningHub_ImageQwenI2L_LoraGenerator:
     @classmethod
     def INPUT_TYPES(s):
@@ -89,12 +134,20 @@ class RunningHub_ImageQwenI2L_LoraGenerator:
         with torch.no_grad():
             embs = QwenImageUnit_Image2LoRAEncode().process(pipeline, image2lora_images=training_images)
             lora = QwenImageUnit_Image2LoRADecode().process(pipeline, **embs)["lora"]
+
+        if hasattr(pipeline, 'is_cfb') and pipeline.is_cfb:
+            print('[kiki] is_cfb:', pipeline.is_cfb)
+            lora_bias = ModelConfig(model_id="DiffSynth-Studio/Qwen-Image-i2L", origin_file_pattern="Qwen-Image-i2L-Bias.safetensors")
+            lora_bias.download_if_necessary()
+            lora_bias = load_state_dict(lora_bias.path, torch_dtype=torch.bfloat16, device="cuda")
+            lora = merge_lora([lora, lora_bias])
         save_file(lora, lora_path)
         # lora_name is a filename under models/loras (e.g. *.safetensors)
         return (self.lora_name, lora_path)
 
 NODE_CLASS_MAPPINGS = {
     "RunningHub_ImageQwenI2L_Loader(Style)": RunningHub_ImageQwenI2L_Loader_Style,
+    "RunningHub_ImageQwenI2L_Loader(CFB)": RunningHub_ImageQwenI2L_Loader_CFB,
     "RunningHub_ImageQwenI2L_LoraGenerator": RunningHub_ImageQwenI2L_LoraGenerator,
 }
 
